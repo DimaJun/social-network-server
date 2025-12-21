@@ -1,9 +1,8 @@
-import { Body, Controller, Post, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Req, Res, UnauthorizedException, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
-import type { Response } from 'express';
-import { AuthGuard } from './guard/auth.guard';
+import type { Response, Request } from 'express';
 
 @Controller('auth')
 export class AuthController {
@@ -31,7 +30,6 @@ export class AuthController {
 		};
 	}
 
-	@UseGuards(AuthGuard)
 	@Post('/logout')
 	logout(@Res({ passthrough: true }) res: Response) {
 		res.clearCookie('refresh', {
@@ -44,5 +42,15 @@ export class AuthController {
 		return {
 			message: 'Success!',
 		};
+	}
+
+	@Get('/refresh')
+	refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+		const refreshToken = req.cookies['refresh'];
+		if (!refreshToken) {
+			throw new UnauthorizedException('Не авторизован');
+		}
+
+		return this.authService.refresh(refreshToken, res);
 	}
 }

@@ -6,6 +6,7 @@ import { JwtPayload } from './types/auth';
 import { LoginDto } from './dto/login.dto';
 import bcrypt from 'bcryptjs';
 import { ProfileService } from '../profile/profile.service';
+import type { Response } from 'express';
 
 @Injectable()
 export class AuthService {
@@ -50,14 +51,51 @@ export class AuthService {
 		};
 	}
 
-	generateAccessToken(payload: JwtPayload) {
+	async refresh(refreshToken: string, res: Response) {
+		let payload: JwtPayload;
+
+		try {
+			payload = this.jwtService.verify(refreshToken, {
+				secret: process.env.JWT_REFRESH_SECRET,
+			});
+		} catch {
+			throw new UnauthorizedException('Refresh token expired or invalid');
+		}
+
+		const user = await this.userService.findUserById(payload.id);
+
+		if (!user) throw new UnauthorizedException('Не авторизован!');
+		const { id, email, username } = user;
+		const tokens = {
+			access_token: this.generateAccessToken({ id, username, email }),
+			refresh_token: this.generateRefreshToken({ id, username, email }),
+		};
+
+		res.cookie('refresh', tokens.refresh_token, {
+			httpOnly: true,
+			secure: false,
+			sameSite: 'strict',
+			maxAge: 2 * 24 * 60 * 60 * 1000,
+		});
+
+		return {
+			access_token: tokens.access_token,
+			user: {
+				id,
+				username,
+				email,
+			},
+		};
+	}
+
+	private generateAccessToken(payload: JwtPayload) {
 		return this.jwtService.sign(payload, {
 			secret: process.env.JWT_ACCESS_SECRET,
 			expiresIn: '15m',
 		});
 	}
 
-	generateRefreshToken(payload: JwtPayload) {
+	private generateRefreshToken(payload: JwtPayload) {
 		return this.jwtService.sign(payload, {
 			secret: process.env.JWT_REFRESH_SECRET,
 			expiresIn: '2d',
