@@ -1,7 +1,15 @@
-import { Controller } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import { ProfileService } from './profile.service';
+import type { RequestWithUser } from './types/profile';
+import { AuthGuard } from '../auth/guard/auth.guard';
 
 @Controller('profile')
 export class ProfileController {
-  constructor(private readonly profileService: ProfileService) {}
+	constructor(private readonly profileService: ProfileService) {}
+
+	@UseGuards(AuthGuard)
+	@Get('/my')
+	async getMyProfile(@Req() req: RequestWithUser) {
+		return this.profileService.getProfileByUserId(req.user.id);
+	}
 }
