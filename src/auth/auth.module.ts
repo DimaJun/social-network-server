@@ -4,6 +4,7 @@ import { AuthController } from './auth.controller';
 import { JwtModule } from '@nestjs/jwt';
 import { UserModule } from '../user/user.module';
 import { AuthGuard } from './guard/auth.guard';
+import { ProfileModule } from '../profile/profile.module';
 
 @Module({
 	imports: [
@@ -15,6 +16,7 @@ import { AuthGuard } from './guard/auth.guard';
 				expiresIn: '15m',
 			},
 		}),
+		ProfileModule,
 	],
 	controllers: [AuthController],
 	providers: [AuthService, AuthGuard],

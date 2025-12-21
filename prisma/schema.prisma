@@ -9,12 +9,26 @@ datasource db {
 }
 
 model User {
-  id        String   @id @unique @default(nanoid(32))
+  id        String   @id @default(nanoid(32))
   username  String   @unique
   email     String   @unique
   password  String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  profile Profile? @relation()
+
   @@map("users")
+}
+
+model Profile {
+  id          String  @id @default(nanoid(32))
+  userId      String  @unique
+  user        User    @relation(fields: [userId], references: [id])
+  avatar      String?
+  age         Int?
+  city        String?
+  nationality String?
+
+  @@map("profiles")
 }
