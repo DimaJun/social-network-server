@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common';
 import { ProfileService } from './profile.service';
 import type { RequestWithUser } from './types/profile';
 import { AuthGuard } from '../auth/guard/auth.guard';
@@ -17,5 +17,11 @@ export class ProfileController {
 	@Get()
 	async getProfilesByQuery(@Query('search') search?: string) {
 		return this.profileService.getProfilesByUsername(search);
+	}
+
+	@UseGuards(AuthGuard)
+	@Get(':id')
+	async getProfileById(@Param('id') id: string) {
+		return this.profileService.getProfileById(id);
 	}
 }

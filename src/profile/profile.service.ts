@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -36,6 +36,36 @@ export class ProfileService {
 			...profile,
 			username: profile.user.username,
 			user: undefined,
+		};
+	}
+
+	async getProfileById(profileId: string) {
+		const profileWithUser = await this.prisma.profile.findUnique({
+			where: {
+				id: profileId,
+			},
+			select: {
+				id: true,
+				avatar: true,
+				city: true,
+				age: true,
+				nationality: true,
+				user: {
+					select: {
+						username: true,
+					},
+				},
+			},
+		});
+		if (!profileWithUser) {
+			throw new NotFoundException('Профиль с таким ID не найден!');
+		}
+
+		const { user, ...rest } = profileWithUser;
+
+		return {
+			...rest,
+			username: user.username,
 		};
 	}
 
