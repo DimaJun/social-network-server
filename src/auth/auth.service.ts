@@ -59,6 +59,12 @@ export class AuthService {
 				secret: process.env.JWT_REFRESH_SECRET,
 			});
 		} catch {
+			res.clearCookie('refresh', {
+				httpOnly: true,
+				secure: false,
+				sameSite: 'strict',
+				maxAge: 0,
+			});
 			throw new UnauthorizedException('Refresh token expired or invalid');
 		}
 

@@ -48,7 +48,7 @@ export class AuthController {
 	refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
 		const refreshToken = req.cookies['refresh'];
 		if (!refreshToken) {
-			throw new UnauthorizedException('Не авторизован');
+			throw new UnauthorizedException('Не авторизован!');
 		}
 
 		return this.authService.refresh(refreshToken, res);

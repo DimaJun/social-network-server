@@ -38,4 +38,37 @@ export class ProfileService {
 			user: undefined,
 		};
 	}
+
+	async getProfilesByUsername(username?: string) {
+		const profiles = await this.prisma.profile.findMany({
+			where: username?.trim()
+				? {
+						user: {
+							username: {
+								contains: username.trim(),
+								mode: 'insensitive',
+							},
+						},
+					}
+				: undefined,
+			select: {
+				id: true,
+				avatar: true,
+				city: true,
+				user: {
+					select: {
+						username: true,
+					},
+				},
+			},
+			take: 15,
+		});
+
+		return profiles.map((p) => ({
+			id: p.id,
+			username: p.user.username,
+			avatar: p.avatar,
+			city: p.city,
+		}));
+	}
 }
