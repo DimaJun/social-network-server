@@ -21,7 +21,12 @@ export class ProfileService {
 			where: {
 				userId,
 			},
-			include: {
+			select: {
+				id: true,
+				age: true,
+				avatar: true,
+				city: true,
+				nationality: true,
 				user: {
 					select: {
 						username: true,
@@ -32,10 +37,11 @@ export class ProfileService {
 
 		if (!profile) return null;
 
+		const { user, ...rest } = profile;
+
 		return {
-			...profile,
-			username: profile.user.username,
-			user: undefined,
+			...rest,
+			username: user.username,
 		};
 	}
 
