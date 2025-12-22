@@ -77,10 +77,7 @@ export class ProfileService {
 						},
 					}
 				: undefined,
-			select: {
-				id: true,
-				avatar: true,
-				city: true,
+			include: {
 				user: {
 					select: {
 						username: true,
@@ -95,6 +92,7 @@ export class ProfileService {
 			username: p.user.username,
 			avatar: p.avatar,
 			city: p.city,
+			userId: p.userId,
 		}));
 	}
 }
