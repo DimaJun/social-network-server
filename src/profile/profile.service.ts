@@ -21,12 +21,7 @@ export class ProfileService {
 			where: {
 				userId,
 			},
-			select: {
-				id: true,
-				age: true,
-				avatar: true,
-				city: true,
-				nationality: true,
+			include: {
 				user: {
 					select: {
 						username: true,
@@ -50,12 +45,7 @@ export class ProfileService {
 			where: {
 				id: profileId,
 			},
-			select: {
-				id: true,
-				avatar: true,
-				city: true,
-				age: true,
-				nationality: true,
+			include: {
 				user: {
 					select: {
 						username: true,
