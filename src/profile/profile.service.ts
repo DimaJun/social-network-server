@@ -1,12 +1,15 @@
 import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { Prisma } from '../../generated/prisma/client';
 
 @Injectable()
 export class ProfileService {
 	constructor(private readonly prisma: PrismaService) {}
 
-	async createProfile(userId: string) {
-		return this.prisma.profile.create({
+	async createProfile(userId: string, tx?: Prisma.TransactionClient) {
+		const client = tx ?? this.prisma;
+
+		return client.profile.create({
 			data: {
 				userId,
 			},

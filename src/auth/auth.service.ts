@@ -7,48 +7,75 @@ import { LoginDto } from './dto/login.dto';
 import bcrypt from 'bcryptjs';
 import { ProfileService } from '../profile/profile.service';
 import type { Response } from 'express';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AuthService {
 	constructor(
+		private readonly prisma: PrismaService,
 		private readonly userService: UserService,
 		private readonly jwtService: JwtService,
 		private readonly profileService: ProfileService,
 	) {}
 
-	async register(dto: RegisterDto) {
-		const user = await this.userService.createUser(dto);
+	async signup(dto: RegisterDto) {
+		await this.userService.checkUserUnique(dto);
 
-		if (user) {
-			const { password, ...withoutPassword } = user;
-			await this.profileService.createProfile(user.id);
-			return withoutPassword;
-		}
+		return this.prisma.$transaction(async (tx) => {
+			const user = await this.userService.createUser(dto, tx);
+			if (user) {
+				await this.profileService.createProfile(user.id, tx);
+				const { password, ...withoutPassword } = user;
+				return withoutPassword;
+			}
+		});
 	}
 
-	async login(dto: LoginDto) {
-		const isUserExist = await this.userService.findUserByEmail(dto.email);
-		if (!isUserExist) {
-			throw new UnauthorizedException(`Пользователя с почтой: ${dto.email} не существует!`);
-		}
-		const isPasswordsMatch = await bcrypt.compare(dto.password, isUserExist.password);
-		if (!isPasswordsMatch) {
-			throw new UnauthorizedException('Неправильный пароль!');
-		}
-		const { id, username, email } = isUserExist;
-		const payload = {
-			id,
-			username,
-			email,
-		};
+	async signin(dto: LoginDto, res: Response) {
+		return this.prisma.$transaction(async (tx) => {
+			const isUserExist = await tx.user.findUnique({
+				where: { email: dto.email },
+			});
+			if (!isUserExist) {
+				throw new UnauthorizedException(`Пользователя с почтой: ${dto.email} не существует!`);
+			}
+			const isPasswordsMatch = await bcrypt.compare(dto.password, isUserExist.password);
+			if (!isPasswordsMatch) {
+				throw new UnauthorizedException('Неправильный пароль!');
+			}
+			const { id, username, email } = isUserExist;
+			const payload = {
+				id,
+				username,
+				email,
+			};
 
-		return {
-			user: payload,
-			tokens: {
+			const tokens = {
 				access_token: this.generateAccessToken(payload),
 				refresh_token: this.generateRefreshToken(payload),
-			},
-		};
+			};
+
+			const hashedRefresh = await bcrypt.hash(tokens.refresh_token, 10);
+			await tx.refreshToken.create({
+				data: {
+					userId: id,
+					tokenHash: hashedRefresh,
+					expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+				},
+			});
+
+			res.cookie('refresh', tokens.refresh_token, {
+				httpOnly: true,
+				secure: false,
+				sameSite: 'strict',
+				maxAge: 2 * 24 * 60 * 60 * 1000,
+			});
+
+			return {
+				access_token: tokens.access_token,
+				user: payload,
+			};
+		});
 	}
 
 	async refresh(refreshToken: string, res: Response) {

@@ -8,26 +8,12 @@ import { Prisma } from '../../generated/prisma/client';
 export class UserService {
 	constructor(private prisma: PrismaService) {}
 
-	async createUser(dto: CreateUserDto) {
-		const isUserExist = await this.prisma.user.findFirst({
-			where: {
-				OR: [{ email: dto.email }, { username: dto.username }],
-			},
-		});
-
-		if (isUserExist) {
-			if (isUserExist.email === dto.email) {
-				throw new ConflictException('Пользователь с такой почтой уже зарегистрирован!');
-			}
-			if (isUserExist.username === dto.username) {
-				throw new ConflictException('Пользоваватель с таким ником уже зарегистрирован!');
-			}
-		}
-
+	async createUser(dto: CreateUserDto, tx?: Prisma.TransactionClient) {
+		const client = tx ?? this.prisma;
 		const hashedPassword = await bcrypt.hash(dto.password, 10);
 
 		try {
-			return await this.prisma.user.create({
+			return await client.user.create({
 				data: {
 					email: dto.email,
 					username: dto.username,
@@ -43,10 +29,22 @@ export class UserService {
 		}
 	}
 
-	async findUserByEmail(email: string) {
-		return this.prisma.user.findUnique({
-			where: { email },
+	async checkUserUnique(dto: CreateUserDto) {
+		const existingUser = await this.prisma.user.findFirst({
+			where: {
+				OR: [{ email: dto.email }, { username: dto.username }],
+			},
 		});
+
+		if (!existingUser) return;
+
+		if (existingUser.email === dto.email) {
+			throw new ConflictException('Пользователь с такой почтой уже зарегистрирован!');
+		}
+
+		if (existingUser.username === dto.username) {
+			throw new ConflictException('Пользователь с таким ником уже зарегистрирован!');
+		}
 	}
 
 	async findUserById(id: string) {
