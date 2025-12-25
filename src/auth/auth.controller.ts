@@ -1,9 +1,8 @@
-import { Body, Controller, HttpCode, HttpStatus, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Param, Post, Req, Res } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import type { Response, Request } from 'express';
-import { clearTokenCookieOptions } from './constants/auth';
 
 @Controller('auth')
 export class AuthController {
@@ -21,19 +20,15 @@ export class AuthController {
 		return await this.authService.signin(dto, res);
 	}
 
-	@Post('/logout')
-	@HttpCode(HttpStatus.OK)
-	logout(@Res({ passthrough: true }) res: Response) {
-		res.clearCookie('refresh', clearTokenCookieOptions);
-
-		return {
-			message: 'Success!',
-		};
-	}
-
 	@Post('/refresh')
 	@HttpCode(HttpStatus.OK)
 	refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
 		return this.authService.refresh(req, res);
+	}
+
+	@Post('/logout/:id')
+	@HttpCode(HttpStatus.OK)
+	logout(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Param('id') id: string) {
+		return this.authService.logout(id, req, res);
 	}
 }

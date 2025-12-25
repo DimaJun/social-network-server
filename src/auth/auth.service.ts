@@ -8,7 +8,7 @@ import bcrypt from 'bcryptjs';
 import { ProfileService } from '../profile/profile.service';
 import type { Response, Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
-import { setTokenCookieOptions } from './constants/auth';
+import { clearTokenCookieOptions, setTokenCookieOptions } from './constants/auth';
 
 @Injectable()
 export class AuthService {
@@ -138,6 +138,41 @@ export class AuthService {
 		return {
 			user,
 			access_token: tokens.access_token,
+		};
+	}
+
+	async logout(userId: string, req: Request, res: Response) {
+		const token = req.cookies['refresh'];
+		if (!token) throw new UnauthorizedException('Unauthorized');
+
+		const userTokens = await this.prisma.refreshToken.findMany({
+			where: { userId },
+		});
+		if (!userTokens.length) {
+			throw new UnauthorizedException('Unauthorized!');
+		}
+
+		let matchedToken;
+		for (const dbToken of userTokens) {
+			const isMatch = await bcrypt.compare(token, dbToken.tokenHash);
+			if (isMatch) {
+				matchedToken = dbToken;
+				break;
+			}
+		}
+
+		if (matchedToken) {
+			await this.prisma.refreshToken.delete({
+				where: {
+					id: matchedToken.id,
+				},
+			});
+		}
+
+		res.clearCookie('refresh', clearTokenCookieOptions);
+
+		return {
+			message: 'Success!',
 		};
 	}
 
