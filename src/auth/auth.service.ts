@@ -6,8 +6,9 @@ import { JwtPayload } from './types/auth';
 import { LoginDto } from './dto/login.dto';
 import bcrypt from 'bcryptjs';
 import { ProfileService } from '../profile/profile.service';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
+import { setTokenCookieOptions } from './constants/auth';
 
 @Injectable()
 export class AuthService {
@@ -43,11 +44,9 @@ export class AuthService {
 			if (!isPasswordsMatch) {
 				throw new UnauthorizedException('Неправильный пароль!');
 			}
-			const { id, username, email } = isUserExist;
+			const { id } = isUserExist;
 			const payload = {
 				id,
-				username,
-				email,
 			};
 
 			const tokens = {
@@ -64,12 +63,7 @@ export class AuthService {
 				},
 			});
 
-			res.cookie('refresh', tokens.refresh_token, {
-				httpOnly: true,
-				secure: false,
-				sameSite: 'strict',
-				maxAge: 2 * 24 * 60 * 60 * 1000,
-			});
+			res.cookie('refresh', tokens.refresh_token, setTokenCookieOptions);
 
 			return {
 				access_token: tokens.access_token,
@@ -78,46 +72,72 @@ export class AuthService {
 		});
 	}
 
-	async refresh(refreshToken: string, res: Response) {
+	async refresh(req: Request, res: Response) {
+		const token = req.cookies['refresh'];
+		if (!token) throw new UnauthorizedException('Unauthorized');
+
 		let payload: JwtPayload;
 
 		try {
-			payload = this.jwtService.verify(refreshToken, {
+			payload = this.jwtService.verify<JwtPayload>(token, {
 				secret: process.env.JWT_REFRESH_SECRET,
 			});
 		} catch {
-			res.clearCookie('refresh', {
-				httpOnly: true,
-				secure: false,
-				sameSite: 'strict',
-				maxAge: 0,
-			});
-			throw new UnauthorizedException('Refresh token expired or invalid');
+			throw new UnauthorizedException('Unauthorized!');
 		}
 
-		const user = await this.userService.findUserById(payload.id);
-
-		if (!user) throw new UnauthorizedException('Не авторизован!');
-		const { id, email, username } = user;
-		const tokens = {
-			access_token: this.generateAccessToken({ id, username, email }),
-			refresh_token: this.generateRefreshToken({ id, username, email }),
-		};
-
-		res.cookie('refresh', tokens.refresh_token, {
-			httpOnly: true,
-			secure: false,
-			sameSite: 'strict',
-			maxAge: 2 * 24 * 60 * 60 * 1000,
+		const userTokens = await this.prisma.refreshToken.findMany({
+			where: {
+				userId: payload.id,
+			},
 		});
 
+		if (!userTokens.length) {
+			throw new UnauthorizedException('Unauthorized!');
+		}
+
+		let matchedToken;
+		for (const dbToken of userTokens) {
+			const isMatch = await bcrypt.compare(token, dbToken.tokenHash);
+			if (isMatch) {
+				matchedToken = dbToken;
+				break;
+			}
+		}
+		if (!matchedToken) {
+			throw new UnauthorizedException('Unauthorized!');
+		}
+
+		const tokens = {
+			access_token: this.generateAccessToken({ id: payload.id }),
+			refresh_token: this.generateRefreshToken({ id: payload.id }),
+		};
+
+		const hashedRefresh = await bcrypt.hash(tokens.refresh_token, 10);
+
+		await this.prisma.$transaction(async (tx) => {
+			await tx.refreshToken.delete({
+				where: { id: matchedToken.id },
+			});
+			await tx.refreshToken.create({
+				data: {
+					userId: payload.id,
+					tokenHash: hashedRefresh,
+					expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+				},
+			});
+		});
+
+		res.cookie('refresh', tokens.refresh_token, setTokenCookieOptions);
+
+		const user = await this.userService.findUserById(payload.id);
+		if (!user) {
+			throw new UnauthorizedException('Unauthorized!');
+		}
+
 		return {
+			user,
 			access_token: tokens.access_token,
-			user: {
-				id,
-				username,
-				email,
-			},
 		};
 	}
 
