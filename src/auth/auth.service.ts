@@ -44,7 +44,7 @@ export class AuthService {
 			if (!isPasswordsMatch) {
 				throw new UnauthorizedException('Неправильный пароль!');
 			}
-			const { id } = isUserExist;
+			const { id, username, email } = isUserExist;
 			const payload = {
 				id,
 			};
@@ -54,58 +54,67 @@ export class AuthService {
 				refresh_token: this.generateRefreshToken(payload),
 			};
 
-			const hashedRefresh = await bcrypt.hash(tokens.refresh_token, 10);
-			await tx.refreshToken.create({
+			const dbToken = await tx.refreshToken.create({
 				data: {
 					userId: id,
-					tokenHash: hashedRefresh,
 					expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
 				},
 			});
 
 			res.cookie('refresh', tokens.refresh_token, setTokenCookieOptions);
+			res.cookie('refreshId', dbToken.id, setTokenCookieOptions);
 
 			return {
 				access_token: tokens.access_token,
-				user: payload,
+				user: {
+					id,
+					username,
+					email,
+				},
 			};
 		});
 	}
 
 	async refresh(req: Request, res: Response) {
 		const token = req.cookies['refresh'];
-		if (!token) throw new UnauthorizedException('Unauthorized');
+		const tokenId = req.cookies['refreshId'];
+		if (!token || !tokenId) {
+			res.clearCookie('refresh', clearTokenCookieOptions);
+			res.clearCookie('refreshId', clearTokenCookieOptions);
+			throw new UnauthorizedException('Unauthorized!');
+		}
 
-		let payload: JwtPayload;
-
+		let payload;
 		try {
 			payload = this.jwtService.verify<JwtPayload>(token, {
 				secret: process.env.JWT_REFRESH_SECRET,
 			});
 		} catch {
+			await this.prisma.refreshToken.delete({
+				where: {
+					id: tokenId,
+				},
+			});
+			res.clearCookie('refresh', clearTokenCookieOptions);
+			res.clearCookie('refreshId', clearTokenCookieOptions);
 			throw new UnauthorizedException('Unauthorized!');
 		}
 
-		const userTokens = await this.prisma.refreshToken.findMany({
+		const storedToken = await this.prisma.refreshToken.findUnique({
 			where: {
-				userId: payload.id,
+				id: tokenId,
 			},
 		});
 
-		if (!userTokens.length) {
-			throw new UnauthorizedException('Unauthorized!');
-		}
-
-		let matchedToken;
-		for (const dbToken of userTokens) {
-			const isMatch = await bcrypt.compare(token, dbToken.tokenHash);
-			if (isMatch) {
-				matchedToken = dbToken;
-				break;
-			}
-		}
-		if (!matchedToken) {
-			throw new UnauthorizedException('Unauthorized!');
+		if (!storedToken || storedToken.userId !== payload.id) {
+			await this.prisma.refreshToken.deleteMany({
+				where: {
+					userId: payload.id,
+				},
+			});
+			res.clearCookie('refresh', clearTokenCookieOptions);
+			res.clearCookie('refreshId', clearTokenCookieOptions);
+			throw new UnauthorizedException('Session compromised!');
 		}
 
 		const tokens = {
@@ -113,63 +122,57 @@ export class AuthService {
 			refresh_token: this.generateRefreshToken({ id: payload.id }),
 		};
 
-		const hashedRefresh = await bcrypt.hash(tokens.refresh_token, 10);
-
-		await this.prisma.$transaction(async (tx) => {
+		const result = await this.prisma.$transaction(async (tx) => {
 			await tx.refreshToken.delete({
-				where: { id: matchedToken.id },
+				where: {
+					id: tokenId,
+				},
 			});
-			await tx.refreshToken.create({
+			const newToken = await tx.refreshToken.create({
 				data: {
 					userId: payload.id,
-					tokenHash: hashedRefresh,
 					expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
 				},
 			});
+			res.cookie('refresh', tokens.refresh_token, setTokenCookieOptions);
+			res.cookie('refreshId', newToken.id, setTokenCookieOptions);
+
+			const user = await this.userService.findUserById(payload.id);
+
+			if (!user) return null;
+
+			return {
+				access_token: tokens.access_token,
+				user,
+			};
 		});
 
-		res.cookie('refresh', tokens.refresh_token, setTokenCookieOptions);
-
-		const user = await this.userService.findUserById(payload.id);
-		if (!user) {
-			throw new UnauthorizedException('Unauthorized!');
+		if (!result) {
+			res.clearCookie('refresh', clearTokenCookieOptions);
+			res.clearCookie('refreshId', clearTokenCookieOptions);
+			throw new UnauthorizedException('User not found');
 		}
 
-		return {
-			user,
-			access_token: tokens.access_token,
-		};
+		return result;
 	}
 
-	async logout(userId: string, req: Request, res: Response) {
-		const token = req.cookies['refresh'];
-		if (!token) throw new UnauthorizedException('Unauthorized');
+	async logout(req: Request, res: Response) {
+		const tokenId = req.cookies['refreshId'];
 
-		const userTokens = await this.prisma.refreshToken.findMany({
-			where: { userId },
-		});
-		if (!userTokens.length) {
+		if (!tokenId) {
+			res.clearCookie('refresh', clearTokenCookieOptions);
+			res.clearCookie('refreshId', clearTokenCookieOptions);
 			throw new UnauthorizedException('Unauthorized!');
 		}
 
-		let matchedToken;
-		for (const dbToken of userTokens) {
-			const isMatch = await bcrypt.compare(token, dbToken.tokenHash);
-			if (isMatch) {
-				matchedToken = dbToken;
-				break;
-			}
-		}
-
-		if (matchedToken) {
-			await this.prisma.refreshToken.delete({
-				where: {
-					id: matchedToken.id,
-				},
-			});
-		}
+		await this.prisma.refreshToken.delete({
+			where: {
+				id: tokenId,
+			},
+		});
 
 		res.clearCookie('refresh', clearTokenCookieOptions);
+		res.clearCookie('refreshId', clearTokenCookieOptions);
 
 		return {
 			message: 'Success!',
@@ -179,7 +182,7 @@ export class AuthService {
 	private generateAccessToken(payload: JwtPayload) {
 		return this.jwtService.sign(payload, {
 			secret: process.env.JWT_ACCESS_SECRET,
-			expiresIn: '15m',
+			expiresIn: '20m',
 		});
 	}
 

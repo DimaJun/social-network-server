@@ -26,9 +26,9 @@ export class AuthController {
 		return this.authService.refresh(req, res);
 	}
 
-	@Post('/logout/:id')
+	@Post('/logout')
 	@HttpCode(HttpStatus.OK)
-	logout(@Req() req: Request, @Res({ passthrough: true }) res: Response, @Param('id') id: string) {
-		return this.authService.logout(id, req, res);
+	logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+		return this.authService.logout(req, res);
 	}
 }

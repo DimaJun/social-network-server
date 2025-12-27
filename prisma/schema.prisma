@@ -35,10 +35,9 @@ model Profile {
 }
 
 model RefreshToken {
-  id        String @id @default(nanoid(52))
-  tokenHash String
-  userId    String
-  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id     String @id @default(nanoid(52))
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
   expiresAt DateTime
